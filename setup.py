@@ -4,21 +4,19 @@ import sys
 from setuptools import setup, find_packages
 
 
-# aiohttp requirement is pegged as we need to manually ensure that
-# https://github.com/aio-libs/aiobotocore/pull/248 will continue working
-# If adding requirements make sure to also add to requirements-dev.txt
+# NOTE: If adding requirements make sure to also add to requirements-dev.txt
+# NOTE: When updating botocore make sure to update awscli/boto3 versions below
 install_requires = [
-    'botocore>=1.8.0, <=1.8.21',
-    'aiohttp>=3.0.0',
-    'multidict>=2.1.4',
+    # pegged to also match items in `extras_require`
+    'botocore>=1.12.24,<1.12.25',
+    'aiohttp>=3.3.1',
     'wrapt>=1.10.10',
-    'packaging>=16.8',
 ]
 
 PY_VER = sys.version_info
 
 if not PY_VER >= (3, 5, 3):
-    raise RuntimeError("aiobotocore doesn't support Python earlier than 3.5")
+    raise RuntimeError("aiobotocore doesn't support Python earlier than 3.5.3")
 
 
 def read(f):
@@ -26,8 +24,8 @@ def read(f):
 
 
 extras_require = {
-    'awscli': ['awscli>=1.12.0, <=1.14.17'],
-    'boto3': ['boto3==1.5.7'],
+    'awscli': ['awscli==1.16.54'],
+    'boto3': ['boto3==1.9.44'],
 }
 
 

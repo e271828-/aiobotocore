@@ -5,10 +5,7 @@ from yarl import URL
 
 from aiobotocore.endpoint import ClientResponseProxy
 
-from aiohttp.client_proto import ResponseHandler
-from aiohttp import TCPConnector
 from aiohttp.client import ClientResponse
-from aiohttp.streams import DataQueue, StreamReader
 from botocore.args import ClientArgsCreator
 from botocore.client import ClientCreator, BaseClient, Config
 from botocore.endpoint import convert_to_response_dict, Endpoint, \
@@ -22,38 +19,27 @@ from botocore.waiter import NormalizedOperationMethod
 # method gets updated this will assert and someone will need to validate:
 # 1) If our code needs to be updated
 # 2) If our minimum botocore version needs to be updated
-# 3) If we need to replace the below hash or add to the set
+# 3) If we need to replace the below hash (not backwards compatible) or add
+#    to the set
 
 # The follow is for our monkeypatches for read_timeout:
 #    github.com/aio-libs/aiobotocore/pull/248
-_READ_TIMEOUT_DIGESTS = {
-    # for our replacement of _factory and _create_connection
-    TCPConnector: {'42a405b3d0b4aa9a61eb7d72925a5c8e373bec6b'},
-
-    # for its inheritance to DataQueue
-    ResponseHandler: {'96d9eb3f04ff80a2acaf2fc18a103db474a3c965'},
-
-    # for our replacement of read()
-    DataQueue: {'be516f7bcdbf5235218261d8ed1f490d299f611d'},
-
-    # for our patch of _wait
-    StreamReader: {'d4ffb6ae823ef4bfd810aade8601ba7b01aa08ec'},
-
-    # for digging into _protocol
-    ClientResponse: {'c2f662e8d641e538ac2a0a0f44c2bf1805167dd1'},
+_AIOHTTP_DIGESTS = {
+    # for using _body
+    ClientResponse: {'e178726065b609c69a1c02e8bb78f22efce90792'},
 }
 
 # These are guards to our main patches
 _API_DIGESTS = {
-    ClientArgsCreator: {'a8d2e4159469622afcf938805b17ca76aefec7e7'},
-    ClientCreator: {'9eef0e5fbd62fc495a5eee2dab118e36ae496dce'},
-    BaseClient: {'23756d283379717b1320315c98399ba284b2d17c'},
-    Config: {'c9261822caa7509d7b30b7738a9f034674061e35'},
-    convert_to_response_dict: {'ed634b3f0c24f8858aee8ed745051397270b1e46'},
-    Endpoint: {'f1effcb1966ab690953f62a5cd48f510294a0440'},
-    EndpointCreator: {'00cb4303f8e9e775fe76996ad2f8852df7900398'},
+    ClientArgsCreator: {'c316001114ff0b91900004e2fc56b71a07509f16'},
+    ClientCreator: {'f68202aca8c908d14b3d7b2446875d297c46671b'},
+    BaseClient: {'63fc3b6ae4cdb265b5363c093832890074f52e18'},
+    Config: {'b84933bb901b4f18641dffe75cc62d55affd390a'},
+    convert_to_response_dict: {'2c73c059fa63552115314b079ae8cbf5c4e78da0'},
+    Endpoint: {'29827aaa421d462ab7b9e200d7203ba9e412633c'},
+    EndpointCreator: {'633337fe0bda97e57c7f0b9596c5a158a03e8e36'},
     PageIterator: {'5a14db3ee7bc8773974b36cfdb714649b17a6a42'},
-    Session: {'87b50bbf6caf0d7ae0ed1498032194ec36ca00f5'},
+    Session: {'52240fc442b0b50586cad07cc9cff43904e0e744'},
     get_session: {'c47d588f5da9b8bde81ccc26eaef3aee19ddd901'},
     NormalizedOperationMethod: {'ee88834b123c6c77dfea0b4208308cd507a6ba36'},
 }
@@ -62,7 +48,7 @@ _API_DIGESTS = {
 # NOTE: this doesn't require moto but needs to be marked to run with coverage
 @pytest.mark.moto
 def test_patches():
-    for obj, digests in _READ_TIMEOUT_DIGESTS.items():
+    for obj, digests in _AIOHTTP_DIGESTS.items():
         digest = hashlib.sha1(getsource(obj).encode('utf-8')).hexdigest()
         assert digest in digests, \
             "Digest of {} not found in: {}".format(obj.__name__, digests)
@@ -75,7 +61,13 @@ def test_patches():
 
 # NOTE: this doesn't require moto but needs to be marked to run with coverage
 @pytest.mark.moto
-def test_set_status_code():
-    resp = ClientResponseProxy('GET', URL('http://foo/bar'))
+def test_set_status_code(event_loop):
+    resp = ClientResponseProxy(
+        'GET', URL('http://foo/bar'),
+        writer=None, continue100=None, timer=None,
+        request_info=None,
+        traces=None,
+        loop=event_loop,
+        session=None)
     resp.status_code = 500
     assert resp.status_code == 500

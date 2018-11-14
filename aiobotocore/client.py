@@ -1,8 +1,6 @@
 import asyncio
-import sys
 
 import botocore.client
-
 from botocore.exceptions import OperationNotPageableError
 from botocore.history import get_global_history_recorder
 from botocore.paginate import Paginator
@@ -12,7 +10,6 @@ from botocore.waiter import xform_name
 from .paginate import AioPageIterator
 from .args import AioClientArgsCreator
 from . import waiter
-PY_35 = sys.version_info >= (3, 5)
 
 
 history_recorder = get_global_history_recorder()
@@ -49,7 +46,8 @@ class AioClientCreator(botocore.client.ClientCreator):
         py_name_to_operation_name = self._create_name_mapping(service_model)
         class_attributes['_PY_TO_OP_NAME'] = py_name_to_operation_name
         bases = [AioBaseClient]
-        self._event_emitter.emit('creating-client-class.%s' % service_name,
+        service_id = service_model.service_id.hyphenize()
+        self._event_emitter.emit('creating-client-class.%s' % service_id,
                                  class_attributes=class_attributes,
                                  base_classes=bases)
         class_name = get_service_module_name(service_model)
@@ -62,8 +60,7 @@ class AioBaseClient(botocore.client.BaseClient):
         self._loop = kwargs.pop('loop', None) or asyncio.get_event_loop()
         super().__init__(*args, **kwargs)
 
-    @asyncio.coroutine
-    def _make_api_call(self, operation_name, api_params):
+    async def _make_api_call(self, operation_name, api_params):
         operation_model = self._service_model.operation_model(operation_name)
         service_name = self._service_model.service_name
         history_recorder.record('API_CALL', {
@@ -80,9 +77,10 @@ class AioBaseClient(botocore.client.BaseClient):
         request_dict = self._convert_to_request_dict(
             api_params, operation_model, context=request_context)
 
+        service_id = self._service_model.service_id.hyphenize()
         handler, event_response = self.meta.events.emit_until_response(
-            'before-call.{endpoint_prefix}.{operation_name}'.format(
-                endpoint_prefix=self._service_model.endpoint_prefix,
+            'before-call.{service_id}.{operation_name}'.format(
+                service_id=service_id,
                 operation_name=operation_name),
             model=operation_model, params=request_dict,
             request_signer=self._request_signer, context=request_context)
@@ -90,12 +88,12 @@ class AioBaseClient(botocore.client.BaseClient):
         if event_response is not None:
             http, parsed_response = event_response
         else:
-            http, parsed_response = yield from self._endpoint.make_request(
+            http, parsed_response = await self._endpoint.make_request(
                 operation_model, request_dict)
 
         self.meta.events.emit(
-            'after-call.{endpoint_prefix}.{operation_name}'.format(
-                endpoint_prefix=self._service_model.endpoint_prefix,
+            'after-call.{service_id}.{operation_name}'.format(
+                service_id=service_id,
                 operation_name=operation_name),
             http_response=http, parsed=parsed_response,
             model=operation_model, context=request_context
@@ -163,6 +161,15 @@ class AioBaseClient(botocore.client.BaseClient):
             return paginator
 
     def get_waiter(self, waiter_name):
+        """Returns an object that can wait for some condition.
+
+        :type waiter_name: str
+        :param waiter_name: The name of the waiter to get. See the waiters
+            section of the service docs for a list of available waiters.
+
+        :returns: The specified waiter object.
+        :rtype: botocore.waiter.Waiter
+        """
         config = self._get_waiter_config()
         if not config:
             raise ValueError("Waiter does not exist: %s" % waiter_name)
@@ -176,16 +183,12 @@ class AioBaseClient(botocore.client.BaseClient):
         return waiter.create_waiter_with_client(
             mapping[waiter_name], model, self, loop=self._loop)
 
-    if PY_35:
-        @asyncio.coroutine
-        def __aenter__(self):
-            yield from self._endpoint._aio_session.__aenter__()
-            return self
+    async def __aenter__(self):
+        await self._endpoint._aio_session.__aenter__()
+        return self
 
-        @asyncio.coroutine
-        def __aexit__(self, exc_type, exc_val, exc_tb):
-            yield from self._endpoint._aio_session.__aexit__(exc_type,
-                                                             exc_val, exc_tb)
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._endpoint._aio_session.__aexit__(exc_type, exc_val, exc_tb)
 
     def close(self):
         """Close all http connections. This is coroutine, and should be

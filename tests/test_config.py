@@ -45,32 +45,27 @@ def test_connector_args():
 
 
 @pytest.mark.moto
-@pytest.mark.run_loop
-def test_connector_timeout(loop):
-    server = AIOServer()
-    session = AioSession(loop=loop)
+@pytest.mark.asyncio
+async def test_connector_timeout(event_loop):
+    session = AioSession(loop=event_loop)
     config = AioConfig(max_pool_connections=1, connect_timeout=1,
                        retries={'max_attempts': 0})
-    s3_client = session.create_client('s3', config=config,
-                                      endpoint_url=server.endpoint_url,
-                                      aws_secret_access_key='xxx',
-                                      aws_access_key_id='xxx')
+    async with AIOServer() as server, \
+            session.create_client('s3', config=config,
+                                  endpoint_url=server.endpoint_url,
+                                  aws_secret_access_key='xxx',
+                                  aws_access_key_id='xxx') as s3_client:
 
-    try:
-        server.wait_until_up()
+        async def get_and_wait():
+            await s3_client.get_object(Bucket='foo', Key='bar')
+            await asyncio.sleep(100)
 
-        @asyncio.coroutine
-        def get_and_wait():
-            yield from s3_client.get_object(Bucket='foo', Key='bar')
-            yield from asyncio.sleep(100)
-
-        # this should not raise as we won't have any issues connecting to the
-        task1 = asyncio.Task(get_and_wait(), loop=loop)
-        task2 = asyncio.Task(get_and_wait(), loop=loop)
+        task1 = asyncio.Task(get_and_wait(), loop=event_loop)
+        task2 = asyncio.Task(get_and_wait(), loop=event_loop)
 
         try:
-            done, pending = yield from asyncio.wait([task1, task2],
-                                                    timeout=3, loop=loop)
+            done, pending = await asyncio.wait([task1, task2],
+                                               timeout=3, loop=event_loop)
 
             # second request should not timeout just because there isn't a
             # connector available
@@ -78,6 +73,20 @@ def test_connector_timeout(loop):
         finally:
             task1.cancel()
             task2.cancel()
-    finally:
-        s3_client.close()
-        yield from server.stop()
+
+
+@pytest.mark.moto
+@pytest.mark.asyncio
+async def test_connector_timeout2(event_loop):
+    session = AioSession(loop=event_loop)
+    config = AioConfig(max_pool_connections=1, connect_timeout=1,
+                       read_timeout=1, retries={'max_attempts': 0})
+    async with AIOServer() as server, \
+            session.create_client('s3', config=config,
+                                  endpoint_url=server.endpoint_url,
+                                  aws_secret_access_key='xxx',
+                                  aws_access_key_id='xxx') as s3_client:
+
+        with pytest.raises(asyncio.TimeoutError):
+            resp = await s3_client.get_object(Bucket='foo', Key='bar')
+            await resp["Body"].read()
