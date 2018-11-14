@@ -24,8 +24,8 @@ def read(f):
 
 
 extras_require = {
-    'awscli': ['awscli==1.16.34'],
-    'boto3': ['boto3==1.9.24'],
+    'awscli': ['awscli==1.16.54'],
+    'boto3': ['boto3==1.9.44'],
 }
 
 
